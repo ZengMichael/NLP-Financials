@@ -1,47 +1,76 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Feb  8 15:38:34 2018
-
-@author: LI
-"""
-
-from __future__ import print_function
-from urllib.request import urlopen
-from bs4 import BeautifulSoup #BeautifulSoup将html解析为对象进行处理，全部页面转变为字典或者数组，相对于正则表达式的方式，可以大大简化处理过程。
-import re #正则表达式模块
-
-
-
+""" Import Packages and define Input Variables """
+from urllib.request import urlopen # urllib provides a high-level interface for fetching data across the World Wide Web.
+from bs4 import BeautifulSoup # BeautifulSoup will extract/parse the data from the HTML or XML documents
+import re # A Regular Expression Module providing regular expression matching operation
 Year_Start = 2000
-Year_End   = 2003
-base_url     ='https://www.federalreserve.gov'
+Year_End   = 2018
+Year_Segmentation = 2013 # Notice: This variable should be updated yearly.
+# The FOMC materials in years (<  Year_Segmentation) will be put in websites separately, such as https://www.federalreserve.gov/monetarypolicy/fomchistorical2011.htm
+# The FOMC materials in years (>= Year_Segmentation) will be put in a website together, that is https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm
+base_url   ='https://www.federalreserve.gov'
 
 
-'''
-以下代码功能：得到Minutes的链接
-'''
+
+''' The Variable links will get FED Minutes' links. '''
 links = []
 for year in range(Year_Start, Year_End+1):
-    fomc_url = base_url + '/monetarypolicy/fomchistorical' + str(year) + '.htm'
-    fomc_socket = urlopen(fomc_url) # urllib.urlopen(url[, data[, proxies]])创建一个表示远程url的类文件对象，然后像本地文件一样操作这个类文件对象来获取远程数据。
-    soup = BeautifulSoup(fomc_socket, 'html.parser')# BeautifulSoup默认支持Python的标准HTML解析库（使用方法：BeautifulSoup(html,’html.parser’)），它也支持一些第三方的解析库（略）
-    statements = soup.find_all('a', href=re.compile('\A/fomc/minutes/\d{8}.htm\Z'),text = 'Minutes')
-    # find_all() 方法搜索当前tag的所有tag子节点，并判断是否符合过滤器的条件 http://blog.csdn.net/depers15/article/details/51934210 
-    # 关于^A^Z的解释 http://blog.csdn.net/justheretobe/article/details/53152267
-    links.append([statement.attrs['href'] for statement in statements])
-    #statement.attrs['href']返回的是一个属性字典，是BeautifulSoup中为对象定义的一个方法。以<a href="http://www.baidu.com" title="Yes me">Baidu</a>为例，{'href': 'http://www.baidu.com', 'title': 'Yes me' }
+    print(year)
+    if year < Year_Segmentation:
+        fomc_url = base_url + '/monetarypolicy/fomchistorical'+str(year)+'.htm'
+    else:
+        fomc_url = base_url + '/monetarypolicy/fomccalendars.htm'
+    fomc_socket = urlopen(fomc_url) # urlopen(url[, data[, proxies]]) will open a network object denoted by a Universal Resource Locator (URL) for reading.
+    soup = BeautifulSoup(fomc_socket, 'html.parser') # Beautiful Soup supports the HTML parser included in Python’s standard library (ex. this one), but it also supports a number of third-party Python parsers.
+    statements = soup.find_all('a', href=re.compile('\A(.*?)/fomc/minutes/\d{8}.htm\Z'                    +'|'+\
+                                                    '\A(.*?)/monetarypolicy/fomc'+str(year)+'\d{4}.htm\Z' +'|'+\
+                                                    '\A(.*?)/monetarypolicy/fomcminutes'+str(year)+'\d{4}.htm\Z'))
+    # \A and \Z are important http://blog.csdn.net/justheretobe/article/details/53152267
+    temp_links = []
+    for statement in statements:
+        temp_link = statement.attrs['href']
+        temp = temp_link.find('gov')
+        if temp>0:
+            temp_link = temp_link[temp+3:]
+        temp_links.append(temp_link)
+    links.append(temp_links)
+    #statement.attrs['href'] will retrun an dictionary's value which is the related url. Take <a href="http://www.baidu.com" title="Yes me">Baidu</a>as an example, there would be {'href': 'http://www.baidu.com', 'title': 'Yes me' }.
 
 
 
-
-def get_articles(links):
-    articles = links
+''' The Variable dates will get Fed Minutes' dates. '''
+def get_dates(links):
+    dates = []
     for index1 in range(len(links)):
+        temp = []
         for index2 in range(len(links[index1])):
+            temp.append(int(re.compile('\d{8}').findall(links[index1][index2])[0]))
+        dates.append(temp)
+    return dates
+dates = get_dates(links)
+
+
+
+''' The Variable articles will get Fed Minutes' articles. '''
+def get_articles(links):
+    articles = []
+    for index1 in range(len(links)):
+        print("Getting Articles:",index1)
+        temp = []
+        for index2 in range(len(links[index1])):
+            print(".......................",index2+1)
             statement_socket = urlopen(base_url + links[index1][index2])
             statement = BeautifulSoup(statement_socket, 'html.parser')
             paragraphs = statement.findAll('p')
-            links[index1][index2] =  "\n\n".join([paragraph.get_text().strip() for paragraph in paragraphs])
-    return articles #实际上返回的是articles
-            
+            temp.append("\n\n".join([paragraph.get_text().strip() for paragraph in paragraphs]))
+        articles.append(temp)
+    return articles
 articles = get_articles(links)
+
+
+
+'''Below Codes for Saving the articles'''
+import pickle
+def Save_articles_pickle(articles,dates):
+    pickle.dump(articles,open('articles.pickle','wb'))
+    pickle.dump(dates,open('dates.pickle','wb'))
+Save_articles_pickle(articles,dates)
